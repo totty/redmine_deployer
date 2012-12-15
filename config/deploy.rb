@@ -131,7 +131,7 @@ namespace :db do
   end
 
   task :generate_secret_token, :roles => [:db], :only => { :primary => true } do
-    run "cd #{current_path} && bundle exec rake RAILS_ENV=#{deploy_env} rake generate_secret_token"
+    run "cd #{current_path} && bundle exec rake RAILS_ENV=#{deploy_env} generate_secret_token"
   end
 
   task :redmine_load_data, :roles => [:db], :only => { :primary => true } do
