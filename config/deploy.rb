@@ -4,7 +4,7 @@ set :application,      "redmine"
 # scm
 set :scm,               :subversion
 set :scm_verbose,       false
-set :repository,        "http://svn.redmine.org/redmine/branches/2.1-stable"
+set :repository,        "http://svn.redmine.org/redmine/branches/2.2-stable"
 
 # default は, tar だが mac 標準の tar は bsdtar で gnutar ではないので zip にする
 set :copy_compression,  :zip
@@ -23,7 +23,6 @@ set :keep_releases,     3              # deploy:cleanup でも残る世代数
 # set :target_os,    :centos
 # set :apache_user,  "apache"
 # set :apache_group, "apache"
-# set :runner,       "www"
 
 # roles
 role :web, "192.168.0.2"
@@ -54,7 +53,8 @@ set :normalize_asset_timestamps, false
 set :bundle_dir,        "./vendor/bundle"
 set :bundle_flags,      "--quiet"
 # set :bundle_without,    [:development, :test, :js_engine, :assets, :postgresql, :sqlite]
-set :bundle_without,    [:development, :test, :postgresql, :sqlite]
+# set :bundle_without,    [:development, :test, :postgresql, :sqlite]
+set :bundle_without,    [:development, :test, :postgresql, :mysql]
 
 namespace :deploy do
   task :finished_setup_message do
@@ -84,8 +84,8 @@ deploy:setup に成功しました。
   end
 
   task :setup_database_yaml, :roles => [fetch(:role, :app)] do
-    # put(IO.read("config/database.yml.example"), "#{current_path}/config/database.yml", :via => :scp, :mode => 0644)
-    run "cp #{latest_release}/config/database.yml.example #{latest_release}/config/database.yml"
+    # database.yml だけは、手元のファイルをアップロード
+    put(IO.read("config/database.yml"), "#{latest_release}/config/database.yml", :via => :scp, :mode => 0644)
   end
 
   after "deploy:update", :except => { :no_release => true } do
@@ -105,28 +105,29 @@ namespace :db do
     show_db = <<-SQL
       show databases;
     SQL
-    run "mysql --user=root --password='' --execute=\"#{show_db}\"" do |channel, stream, data|
+    run "mysql --user=root --password= --execute=\"#{show_db}\"" do |channel, stream, data|
       exists = exists || data.include?("redmine")
     end
+    puts "db exists = #{exists}"
     exists
   end
 
   task :create, :roles => [:db], :only => { :primary => true } do
     if database_exists?
-      # run "cd #{current_path} && bundle exec rake RAILS_ENV=#{deploy_env} db:create"
-
-      ## 上記の Redmine の db:create のRakeタスクは、ruby-1.9.3 ではNGっぽいので、
-      ## DBのCreateは、手動でやる
-      create_sql = <<-SQL
-        create database redmine character set utf8;
-      SQL
-      grant_sql = <<-SQL
-        grant all privileges on *.* to 'root'@'%' identified by '' with grant option;
-      SQL
-      run "mysql --user='root' --password='' --execute=\"#{create_sql}\""
-      run "mysql --user='root' --password='' --execute=\"#{grant_sql}\""
-    else
       run "echo 'database exists.'"
+    else
+      run "cd #{current_path} && bundle exec rake RAILS_ENV=#{deploy_env} db:create"
+
+      # ## (for MySQL)
+      # ## ユーザ作成があるのでDBのCreateは個別にやりたい場合
+      # create_sql = <<-SQL
+      #   create database redmine character set utf8;
+      # SQL
+      # grant_sql = <<-SQL
+      #   grant all privileges on *.* to 'root'@'%' identified by '' with grant option;
+      # SQL
+      # run "mysql --user=root --password= --execute=\"#{create_sql}\""
+      # run "mysql --user=root --password= --execute=\"#{grant_sql}\""
     end
   end
 
@@ -135,11 +136,11 @@ namespace :db do
   end
 
   task :redmine_load_data, :roles => [:db], :only => { :primary => true } do
-    run "cd #{current_path} && bundle exec rake RAILS_ENV=#{deploy_env} redmine:load_default_data"
+    run "cd #{current_path} && bundle exec rake RAILS_ENV=#{deploy_env} REDMINE_LANG=ja redmine:load_default_data"
   end
 end
 
-# app ロールでのみ実行されるようにします。
+# 以下の流れを踏まえた上で before/after を設定します
 # ・deploy:cold
 # ・deploy:update
 #   == transaction: start ==
@@ -152,22 +153,18 @@ end
 # ・deploy:start
 
 after  "deploy:setup",           "deploy:finished_setup_message"
-# after  "deploy:finalize_update", "deploy:setup_database_yaml"
-# before "deploy:finalize_update", "db:create"
 # after  "deploy:finalize_update", "deploy:precompile"
+before "deploy:create_symlink",  "deploy:setup_database_yaml"
 
-before  "deploy:create_symlink", "deploy:setup_database_yaml"
-
-## http://www.redmine.org/projects/redmine/wiki/RedmineInstall
-before "deploy:migrate",         "db:create"
+## see http://www.redmine.org/projects/redmine/wiki/RedmineInstall
+# before "deploy:migrate",         "db:create"                # sqliteならcreate不要
 before "deploy:migrate",         "db:generate_secret_token"
 after  "deploy:migrate",         "db:redmine_load_data"
 
 
 # apache & passenger
 namespace :httpd do
-  #set :httpd_bin_path,  "/etc/init.d/httpd"
-  set :httpd_bin_path,  "/usr/local/sbin/apachectl"
+  set :httpd_bin_path,  "/usr/sbin/apachectl"
   set :httpd_access_log_path, "/var/log/httpd/access_log"
   set :httpd_error_log_path,  "/var/log/httpd/error_log"
 
