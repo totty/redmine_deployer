@@ -147,7 +147,7 @@ after  "deploy:setup",           "deploy:finished_setup_message"
 # after  "deploy:finalize_update", "deploy:precompile"
 before "deploy:create_symlink",  "deploy:setup_database_yaml"
 
-## see http://www.redmine.org/projects/redmine/wiki/RedmineInstall
+## ここみて調整。。 http://www.redmine.org/projects/redmine/wiki/RedmineInstall
 # before "deploy:migrate",         "db:create"                # sqliteならcreate不要
 before "deploy:migrate",         "db:generate_secret_token"
 after  "deploy:migrate",         "db:redmine_load_data"
