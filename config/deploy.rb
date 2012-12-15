@@ -19,25 +19,18 @@ set :deploy_env,        "production"
 set :rails_env,         "production"
 set :keep_releases,     3              # deploy:cleanup でも残る世代数
 
-# # passenger-recipesの設定
-# set :target_os,    :centos
-# set :apache_user,  "apache"
-# set :apache_group, "apache"
-
 # roles
 role :web, "192.168.0.2"
 role :app, "192.168.0.2"
 role :db , "192.168.0.2", :primary => true
 
 # ssh
-set :user, 'root'
-set :password, 'password'
-# set :user do
-#   Capistrano::CLI.ui.ask('SSH User: ')
-# end
-# set :password do
-#   Capistrano::CLI.password_prompt('SSH Password: ')
-# end
+set :user do
+  Capistrano::CLI.ui.ask('SSH User: ')
+end
+set :password do
+  Capistrano::CLI.password_prompt('SSH Password: ')
+end
 set :ssh_options, {
   :forward_agent => true,
   :port          => 22,
@@ -52,7 +45,6 @@ set :normalize_asset_timestamps, false
 # bundler
 set :bundle_dir,        "./vendor/bundle"
 set :bundle_flags,      "--quiet"
-# set :bundle_without,    [:development, :test, :js_engine, :assets, :postgresql, :sqlite]
 # set :bundle_without,    [:development, :test, :postgresql, :sqlite]
 set :bundle_without,    [:development, :test, :postgresql, :mysql]
 
@@ -108,7 +100,6 @@ namespace :db do
     run "mysql --user=root --password= --execute=\"#{show_db}\"" do |channel, stream, data|
       exists = exists || data.include?("redmine")
     end
-    puts "db exists = #{exists}"
     exists
   end
 
@@ -160,7 +151,9 @@ before "deploy:create_symlink",  "deploy:setup_database_yaml"
 # before "deploy:migrate",         "db:create"                # sqliteならcreate不要
 before "deploy:migrate",         "db:generate_secret_token"
 after  "deploy:migrate",         "db:redmine_load_data"
-
+before "deploy:start" do
+  run "chown -R apache #{deploy_to}"
+end
 
 # apache & passenger
 namespace :httpd do
@@ -177,14 +170,6 @@ namespace :httpd do
 
   task :graceful_stop, roles => [fetch(:role, :web)] do
     run "#{sudo} #{httpd_bin_path} graceful-stop", :pty => true
-  end
-
-  # apache:web:diable/enable
-  namespace :web do
-    desc "apache web disable"
-    task(:disable) { deploy.web.disable }
-    desc "apache web enable"
-    task(:enable) { deploy.web.enable }
   end
 
   # log
